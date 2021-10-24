@@ -1,2 +1,30 @@
-theme: jekyll-theme-minimal
+
+# Theme
+plugins:
+  - jekyll-remote-theme
+remote_theme: jekyll/minima
+
+# Theme config
+author:
+  name: Rohan Grover
+  email: "rohannng@gmail.com"
+
+minima:
+  social_links:
+    github: rohannng
+    stackoverflow: "127592"
+    linkedin: rohangrover
+
+
 title: Rohan Grover
+email: rohannng@gmail.com
+description: >- # this means to ignore newlines until "baseurl:"
+  Software Engineer -> Tech Lead -> Engineering Manager
+baseurl: "" # the subpath of your site, e.g. /blog
+url: "https://rohannng.github.io" # the base hostname & protocol for your site, e.g. http://example.com
+
+
+
+
+
+
