@@ -9,7 +9,6 @@ url: "https://rohannng.github.io" # the base hostname & protocol for your site, 
 
 
 # Theme
-theme: no-style-please
 remote_theme: no-style-please
 
 # Theme config
