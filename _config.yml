@@ -2,7 +2,7 @@ author: Rohan Grover
 email: "rohannng@gmail.com"
 title: Rohan Grover
 description: >- # this means to ignore newlines until "baseurl:"
-  engineering_manager(tech_lead(engineer()))
+  engineering_manager | principal_software_engineer
 baseurl: "" # the subpath of your site, e.g. /blog
 url: "https://rohangrover.xyz" # the base hostname & protocol for your site, e.g. http://example.com
 
