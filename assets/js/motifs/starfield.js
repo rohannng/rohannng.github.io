@@ -12,7 +12,9 @@
  *
  * Interactions (mouse / touch on supported devices):
  *   - cursor halo brightens nearby stars
- *   - depth-weighted parallax shift toward the cursor
+ *   - as the cursor moves near stars, line segments connect each star
+ *     the cursor passes to the next, tracing out a constellation along
+ *     the cursor's path; segments fade out shortly after
  *   - click empty space to launch a shooting star from the cursor
  *
  * Co-developed by Rohan Grover <rohannng@gmail.com> and Claude (Anthropic, Opus 4.7 / claude-opus-4-7).
@@ -28,6 +30,8 @@
   function fmt3(v) { return (+v).toFixed(3); }
 
   var CURSOR_R = 160, CURSOR_R2 = CURSOR_R * CURSOR_R;
+  var PROX_R = 90, PROX_R2 = PROX_R * PROX_R; // cursor "touches" stars within this radius
+  var SEG_MAX = 24;                           // cap on live trail segments
 
   var defaults = {
     stars: 140,
@@ -41,7 +45,24 @@
   };
 
   var stars, spikeStars, shootingStars, constellations, comet;
-  var starG, spikeG, shootG, constG, cometG;
+  var starG, spikeG, shootG, constG, cometG, cursorG;
+  var cursorSegs, lastStar;
+
+  function spawnCursorSegment(a, b) {
+    var ln = u.el('line', {
+      stroke: u.COLOR, 'stroke-width': '0.5', 'stroke-linecap': 'round',
+      x1: a.x, y1: a.y, x2: b.x, y2: b.y, opacity: '0'
+    });
+    cursorG.appendChild(ln);
+    cursorSegs.push({
+      a: a, b: b, line: ln,
+      life: 0, max: 160 + Math.floor(Math.random() * 80)
+    });
+    while (cursorSegs.length > SEG_MAX) {
+      var old = cursorSegs.shift();
+      if (old.line.parentNode) cursorG.removeChild(old.line);
+    }
+  }
 
   function isInteractive(t) {
     while (t && t !== document.body && t !== document) {
@@ -160,11 +181,12 @@
     init: function (cfg) {
       u.clear(P.motifGroup);
       var W = P.state.W, H = P.state.H;
-      // Layer order (back to front): constellations, comet, stars, spikes, shooting stars
+      // Layer order (back to front): constellations, comet, stars, spikes, cursor lines, shooting stars
       constG  = u.el('g'); P.motifGroup.appendChild(constG);
       cometG  = u.el('g'); P.motifGroup.appendChild(cometG);
       starG   = u.el('g'); P.motifGroup.appendChild(starG);
       spikeG  = u.el('g'); P.motifGroup.appendChild(spikeG);
+      cursorG = u.el('g'); P.motifGroup.appendChild(cursorG);
       shootG  = u.el('g'); P.motifGroup.appendChild(shootG);
 
       stars = []; shootingStars = []; constellations = []; comet = null;
@@ -177,7 +199,6 @@
         stars.push({
           x: Math.random() * W,
           y: Math.random() * H,
-          dx: 0, dy: 0,
           depth: depth,
           phase: Math.random() * Math.PI * 2,
           baseOp: 0.4 + depth * 0.5,
@@ -185,6 +206,10 @@
           el: c
         });
       }
+
+      // Star-to-star trail segments traced as the cursor moves
+      cursorSegs = [];
+      lastStar = null;
 
       // Diffraction spikes on the brightest N stars
       spikeStars = [];
@@ -206,29 +231,23 @@
       var cursor = cfg.cursor || 0;
       var hasCursor = mx > -1000 && cursor > 0;
 
-      // Stars: drift, twinkle, cursor halo, parallax shift
+      // Stars: drift, twinkle, cursor halo (no positional shift)
       for (var i = 0; i < stars.length; i++) {
         var s = stars[i];
         s.y += cfg.speed * s.depth;
         if (s.y > H + 5) { s.y = -5; s.x = Math.random() * W; }
         var op = s.baseOp + Math.sin(t + s.phase) * cfg.twinkle * 0.5;
-        var dxr = 0, dyr = 0;
         if (hasCursor) {
           var dxc = s.x - mx, dyc = s.y - my;
           var d2 = dxc*dxc + dyc*dyc;
           if (d2 < CURSOR_R2) {
-            var d = Math.sqrt(d2) || 0.001;
-            var w = (1 - d / CURSOR_R);
-            op += w * cursor * 0.55;                       // halo brightening
-            var shiftAmt = w * cursor * 14 * s.depth;      // depth-weighted parallax
-            dxr = -dxc / d * shiftAmt;
-            dyr = -dyc / d * shiftAmt;
+            var w = 1 - Math.sqrt(d2) / CURSOR_R;
+            op += w * cursor * 0.55;
           }
         }
         if (op < 0.05) op = 0.05; if (op > 1) op = 1;
-        s.dx = dxr; s.dy = dyr;
-        s.el.setAttribute('cx', (s.x + dxr).toFixed(2));
-        s.el.setAttribute('cy', (s.y + dyr).toFixed(2));
+        s.el.setAttribute('cx', s.x.toFixed(2));
+        s.el.setAttribute('cy', s.y.toFixed(2));
         s.el.setAttribute('opacity', op.toFixed(2));
       }
 
@@ -236,19 +255,58 @@
       for (var sp = 0; sp < spikeStars.length; sp++) {
         var sps = spikeStars[sp];
         var ss = sps.star;
-        var rx = ss.x + ss.dx, ry = ss.y + ss.dy;
         var half = sps.len * 0.5;
-        sps.h.setAttribute('x1', (rx - half).toFixed(2));
-        sps.h.setAttribute('y1', ry.toFixed(2));
-        sps.h.setAttribute('x2', (rx + half).toFixed(2));
-        sps.h.setAttribute('y2', ry.toFixed(2));
-        sps.v.setAttribute('x1', rx.toFixed(2));
-        sps.v.setAttribute('y1', (ry - half).toFixed(2));
-        sps.v.setAttribute('x2', rx.toFixed(2));
-        sps.v.setAttribute('y2', (ry + half).toFixed(2));
+        sps.h.setAttribute('x1', (ss.x - half).toFixed(2));
+        sps.h.setAttribute('y1', ss.y.toFixed(2));
+        sps.h.setAttribute('x2', (ss.x + half).toFixed(2));
+        sps.h.setAttribute('y2', ss.y.toFixed(2));
+        sps.v.setAttribute('x1', ss.x.toFixed(2));
+        sps.v.setAttribute('y1', (ss.y - half).toFixed(2));
+        sps.v.setAttribute('x2', ss.x.toFixed(2));
+        sps.v.setAttribute('y2', (ss.y + half).toFixed(2));
         var op2 = parseFloat(ss.el.getAttribute('opacity')) * 0.55;
         sps.h.setAttribute('opacity', op2.toFixed(2));
         sps.v.setAttribute('opacity', op2.toFixed(2));
+      }
+
+      // Cursor trace: when the cursor enters proximity of a new star,
+      // connect the previous "touched" star to it. The chain naturally
+      // accumulates along the cursor's path and each segment fades out
+      // on its own — so the trail disappears shortly after the cursor
+      // stops, without any explicit motion detection.
+      if (hasCursor) {
+        var nearest = null, nearD2 = PROX_R2;
+        for (var ck = 0; ck < stars.length; ck++) {
+          var sk = stars[ck];
+          var dxk = sk.x - mx, dyk = sk.y - my;
+          var dk2 = dxk*dxk + dyk*dyk;
+          if (dk2 < nearD2) { nearD2 = dk2; nearest = sk; }
+        }
+        if (nearest && nearest !== lastStar) {
+          if (lastStar) spawnCursorSegment(lastStar, nearest);
+          lastStar = nearest;
+        }
+      } else {
+        lastStar = null;
+      }
+      for (var cs = cursorSegs.length - 1; cs >= 0; cs--) {
+        var seg = cursorSegs[cs];
+        seg.life++;
+        var ph;
+        if (seg.life < 10)              ph = seg.life / 10;
+        else if (seg.life > seg.max - 60) ph = (seg.max - seg.life) / 60;
+        else                              ph = 1;
+        if (ph < 0) ph = 0;
+        seg.line.setAttribute('opacity', (ph * 0.5 * cursor).toFixed(2));
+        // Stars drift, so re-pin segment endpoints to live coordinates
+        seg.line.setAttribute('x1', seg.a.x.toFixed(2));
+        seg.line.setAttribute('y1', seg.a.y.toFixed(2));
+        seg.line.setAttribute('x2', seg.b.x.toFixed(2));
+        seg.line.setAttribute('y2', seg.b.y.toFixed(2));
+        if (seg.life >= seg.max) {
+          if (seg.line.parentNode) cursorG.removeChild(seg.line);
+          cursorSegs.splice(cs, 1);
+        }
       }
 
       // Auto shooting stars from the top edge
@@ -281,10 +339,10 @@
         else                              phase = 1;
         if (phase < 0) phase = 0;
         con.line.setAttribute('opacity', (phase * 0.45).toFixed(2));
-        con.line.setAttribute('x1', (con.a.x + con.a.dx).toFixed(2));
-        con.line.setAttribute('y1', (con.a.y + con.a.dy).toFixed(2));
-        con.line.setAttribute('x2', (con.b.x + con.b.dx).toFixed(2));
-        con.line.setAttribute('y2', (con.b.y + con.b.dy).toFixed(2));
+        con.line.setAttribute('x1', con.a.x.toFixed(2));
+        con.line.setAttribute('y1', con.a.y.toFixed(2));
+        con.line.setAttribute('x2', con.b.x.toFixed(2));
+        con.line.setAttribute('y2', con.b.y.toFixed(2));
         if (con.life >= con.max) {
           constG.removeChild(con.line);
           constellations.splice(c, 1);
